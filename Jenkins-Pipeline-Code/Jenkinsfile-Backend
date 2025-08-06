@@ -1,5 +1,5 @@
 pipeline {
-    agent any 
+    agent any
     tools {
         jdk 'jdk'
         nodejs 'nodejs'
@@ -7,7 +7,7 @@ pipeline {
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
         AWS_ACCOUNT_ID = credentials('ACCOUNT_ID')
-        AWS_ECR_REPO_NAME = credentials('ECR_REPO2')
+        AWS_ECR_REPO_NAME = credentials('ECR_REPO2') // e.g., 'backend'
         AWS_DEFAULT_REGION = 'us-east-1'
         REPOSITORY_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
     }
@@ -50,7 +50,7 @@ pipeline {
             }
         }
 
-        stage("Docker Image Build") {
+        stage('Docker Image Build') {
             steps {
                 dir('Application-Code/backend') {
                     sh """
@@ -62,29 +62,32 @@ pipeline {
             }
         }
 
-        stage("ECR Image Pushing") {
+        stage('ECR Image Pushing') {
             steps {
                 script {
+                    def imageName = "${AWS_ECR_REPO_NAME}" // e.g., 'backend'
+                    def ecrImageTag = "${REPOSITORY_URI}/${imageName}:${BUILD_NUMBER}"
+
                     sh """
                         echo "Logging into ECR..."
                         aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${REPOSITORY_URI}
-                        
-                        echo "Tagging image..."
-                        docker tag ${AWS_ECR_REPO_NAME} ${REPOSITORY_URI}/${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}
-                        
+
+                        echo "Tagging image: ${imageName} -> ${ecrImageTag}"
+                        docker tag ${imageName} ${ecrImageTag}
+
                         echo "Pushing image to ECR..."
-                        docker push ${REPOSITORY_URI}/${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}
+                        docker push ${ecrImageTag}
                     """
                 }
             }
         }
 
-        stage("TRIVY Image Scan") {
+        stage('Trivy Image Scan') {
             steps {
-                sh """
-                    echo "Running TRIVY scan on image..."
-                    trivy image ${REPOSITORY_URI}/${AWS_ECR_REPO_NAME}:${BUILD_NUMBER} > trivyimage.txt
-                """
+                script {
+                    def ecrImageTag = "${REPOSITORY_URI}/${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}"
+                    sh "trivy image ${ecrImageTag} > trivyimage.txt"
+                }
             }
         }
 
@@ -99,10 +102,9 @@ pipeline {
                         sh """
                             git config user.email "elviedjomo@yahoo.com"
                             git config user.name "elviedjomo"
-                            
+
+                            echo "Updating deployment.yaml with new image tag..."
                             imageTag=\$(grep -oP '(?<=backend:)[^ ]+' deployment.yaml)
-                            echo "Old image tag: \$imageTag"
-                            
                             sed -i "s|${AWS_ECR_REPO_NAME}:\$imageTag|${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}|" deployment.yaml
 
                             git add deployment.yaml
