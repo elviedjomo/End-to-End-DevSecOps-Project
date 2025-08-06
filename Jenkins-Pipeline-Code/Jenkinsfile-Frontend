@@ -5,7 +5,7 @@ pipeline {
         nodejs 'nodejs'
     }
     environment  {
-        SCANNER_HOME=tool 'sonar-scanner'
+        SCANNER_HOME = tool 'sonar-scanner'
         AWS_ACCOUNT_ID = credentials('ACCOUNT_ID')
         AWS_ECR_REPO_NAME = credentials('ECR_REPO1')
         AWS_DEFAULT_REGION = 'us-east-1'
@@ -17,30 +17,32 @@ pipeline {
                 cleanWs()
             }
         }
+
         stage('Checkout from Git') {
             steps {
                 git branch: 'main', credentialsId: 'GITHUB', url: 'https://github.com/elviedjomo/End-to-End-DevSecOps-Project.git'
-
             }
         }
+
         stage('Sonarqube Analysis') {
             steps {
                 dir('Application-Code/frontend') {
                     withSonarQubeEnv('sonar-server') {
-                        sh '''$SCANNER_HOME/bin/sonar-scanner \
-                        -Dsonar.projectName=three-tier-frontend \
-                        -Dsonar.projectKey=three-tier-frontend'''
+                        sh '''${SCANNER_HOME}/bin/sonar-scanner \
+  -Dsonar.projectName=three-tier-frontend \
+  -Dsonar.projectKey=three-tier-frontend'''
                     }
                 }
             }
         }
+
         stage('Quality Check') {
             steps {
                 script {
                     waitForQualityGate abortPipeline: false, credentialsId: 'sonar-token' 
                 }
             }
-        } // ✅ This bracket was incorrectly closed earlier — now it’s in the right place
+        }
 
         stage('Trivy File Scan') {
             steps {
@@ -50,7 +52,7 @@ pipeline {
             }
         }
 
-        stage("Docker Image Build") {
+        stage('Docker Image Build') {
             steps {
                 script {
                     dir('Application-Code/frontend') {
@@ -62,7 +64,7 @@ pipeline {
             }
         }
 
-        stage("ECR Image Pushing") {
+        stage('ECR Image Pushing') {
             steps {
                 script {
                     sh 'aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${REPOSITORY_URI}'
@@ -72,7 +74,7 @@ pipeline {
             }
         }
 
-        stage("TRIVY Image Scan") {
+        stage('TRIVY Image Scan') {
             steps {
                 sh 'trivy image ${REPOSITORY_URI}${AWS_ECR_REPO_NAME}:${BUILD_NUMBER} > trivyimage.txt' 
             }
@@ -80,7 +82,7 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                git credentialsId: 'GITHUB', url: 'https://github.com/elviedjomo/End-to-End-DevSecOps-Project.git'
+                git branch: 'main', credentialsId: 'GITHUB', url: 'https://github.com/elviedjomo/End-to-End-DevSecOps-Project.git'
             }
         }
 
@@ -92,21 +94,26 @@ pipeline {
             steps {
                 dir('Kubernetes-Manifests-file/Frontend') {
                     withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
-                        sh '''
-                            git config user.email "elviedjomo@yahoo.com"
-                            git config user.name "elviedjomo"
-                            BUILD_NUMBER=${BUILD_NUMBER}
-                            echo $BUILD_NUMBER
-                            imageTag=$(grep -oP '(?<=frontend:)[^ ]+' deployment.yaml)
-                            echo $imageTag
-                            sed -i "s/${AWS_ECR_REPO_NAME}:${imageTag}/${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}/" deployment.yaml
-                            git add deployment.yaml
-                            git commit -m "Update deployment Image to version \${BUILD_NUMBER}"
-                            git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
-                        '''
+                        sh '''#!/bin/bash
+git config user.email "elviedjomo@yahoo.com"
+git config user.name "elviedjomo"
+
+BUILD_NUMBER=${BUILD_NUMBER}
+echo "Build number: $BUILD_NUMBER"
+
+imageTag=$(grep -oP '(?<=frontend:)[^ ]+' deployment.yaml)
+echo "Current image tag: $imageTag"
+
+sed -i "s/${AWS_ECR_REPO_NAME}:${imageTag}/${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}/" deployment.yaml
+
+git add deployment.yaml
+git commit -m "Update deployment Image to version ${BUILD_NUMBER}"
+git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
+'''
                     }
                 }
             }
         }
-    } // end of stages
-} // end of pipeline
+    }
+}
+
