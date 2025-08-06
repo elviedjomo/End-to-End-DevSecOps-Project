@@ -1,0 +1,7 @@
+# Ignore Terraform local state
+.terraform/
+*.tfstate
+*.tfstate.backup
+crash.log
+*.log
+
